@@ -1,0 +1,20 @@
+[
+  {
+    "type": "SaaSAuditEvent",
+    "event_id": "saas-001",
+    "nhi_id": "role-aegis-shadow-agent",
+    "data_classes": ["PHI", "claims_data"],
+    "tools_called": ["aurora_read"],
+    "destination": "rds.aurora.internal",
+    "timestamp": "2026-06-03T10:00:05Z"
+  },
+  {
+    "type": "SaaSAuditEvent",
+    "event_id": "saas-002",
+    "nhi_id": "role-marketing-summarizer",
+    "data_classes": ["marketing_copy"],
+    "tools_called": ["external_llm_call"],
+    "destination": "api.openai.com",
+    "timestamp": "2026-06-03T10:05:13Z"
+  }
+]

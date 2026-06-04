@@ -1,0 +1,220 @@
+﻿Aegis Discovery — Technical Test
+________________
+
+
+You may use Claude Code, Cursor, GitHub Copilot, or any AI coding tool. You must be able to explain every architecture decision, trade-off, and edge case in your own words — the debrief after submission is as important as the code.
+________________
+
+
+Objective
+Build the most critical part of the Aegis MVP:
+Convert raw discovery signals from multiple sources into one canonical AI Agent record, detect risk, and recommend a policy — with evidence.
+This directly mirrors the core Aegis Discovery pipeline: normalized telemetry → identity correlation → agent record → risk findings → policy recommendation.
+The output must be real — not mocked, not hard-coded for a specific input.
+________________
+
+
+Problem Statement
+Aegis receives raw signals from four sources:
+* Runtime telemetry (eBPF / network capture)
+* Cloud identity / IAM events
+* Repository scan findings
+* SaaS / audit events
+These signals are incomplete and arrive in different schemas. A runtime event may only carry host_id + pid. A repo scan may only carry repo + framework_hint. Your system must handle this from the start.
+Design and implement a small working service that:
+1. Normalizes raw events
+2. Correlates them into one AI Agent record
+3. Detects risky behavior
+4. Scores the agent
+5. Recommends the best policy with evidence
+6. Exposes the result through an API or CLI
+________________
+
+
+What to Build
+1. Input Event Processor
+Create an ingestion layer that accepts JSON files or API POST requests for these four event types:
+Event Type
+	Simulates
+	RuntimeEvent
+	eBPF / network telemetry
+	NHIManifest
+	Cloud IAM / identity inventory
+	CapabilityHint
+	Repo scan findings
+	SaaSAuditEvent
+	SaaS platform audit logs
+	Each event includes some subset of these partial identity fields:
+nhi_id, host_id, pid, workload_id, repo, timestamp,
+provider, model, framework_hint, tools_called,
+data_classes, destination
+________________
+
+
+2. Normalizer
+Normalize all raw inputs into a canonical schema. You define the schema.
+You should produce and document:
+* Canonical event schema
+* Agent schema
+* Risk finding schema
+* Policy recommendation schema
+________________
+
+
+3. Identity Correlator (most important component)
+Implement correlation logic that merges events from multiple sources into a single Agent record using these four join keys:
+* nhi_id
+* host_id + pid
+* workload_id
+* Time-window matching (±5 minute tolerance)
+Your correlator must handle:
+* Partial information — one event may only carry two of the four keys
+* Multiple agents on the same host
+* Duplicate events from the same source
+* Conflicting framework_hint values across events
+* Events arriving out of time order
+Expected output:
+json
+{
+  "agent_id": "agent_001",
+  "nhi_id": "role-aegis-shadow-agent",
+  "workload_id": "claims-processor",
+  "framework": "langchain",
+  "provider": "anthropic",
+  "data_classes": ["PHI", "claims_data"],
+  "tools": ["aurora_read", "external_llm_call"],
+  "risk_score": 87,
+  "risk_tier": "HIGH",
+  "recommended_policy": "phi-handling-v3"
+}
+________________
+
+
+4. Fingerprint Classifier
+Implement a deterministic rule-based classifier. No ML required. Examples:
+* Repo imports langchain → classify as LangChain
+* Repo imports crewai → classify as CrewAI
+* Runtime calls api.anthropic.com with tool-use patterns → classify as direct_sdk_or_agentic_llm
+* mcp.json or .cursor/ config detected → classify as MCP-enabled agent
+In your README, explain how this would evolve into a trained ML classifier for production.
+________________
+
+
+5. Risk Detection
+Implement at least three risk rules. These three are required:
+Rule 1 — PHI to External LLM
+* data_classes contains PHI
+* AND destination is an external LLM provider
+* → Risk = HIGH
+Rule 2 — Agent Without Aegis SDK
+* Repo imports an agent framework
+* AND does not import aegislib
+* → Risk = MEDIUM or HIGH
+Rule 3 — Unexpected Tool or Permission Use
+* Agent calls a tool or resource outside its established baseline set
+* → Risk = HIGH
+________________
+
+
+6. Risk Scorer
+Implement a 0–100 composite risk score using these four factors:
+Factor
+	What It Captures
+	Scope
+	Breadth of tool and resource access
+	Sensitivity
+	Data classes touched
+	Autonomy
+	Degree of unsupervised execution
+	Drift
+	Deviation from established baseline
+	Score → tier mapping:
+* 0–39 = LOW
+* 40–69 = MEDIUM
+* 70–100 = HIGH
+________________
+
+
+7. Policy Recommender
+Recommend one policy based on agent capabilities. Use these three sample policies:
+* phi-handling-v3
+* external-egress-redact
+* audit-all-llm-calls
+Example logic:
+* PHI + external LLM → phi-handling-v3
+* External LLM only → external-egress-redact
+* Any LLM usage → audit-all-llm-calls
+Output must include an evidence chain:
+json
+{
+  "policy": "phi-handling-v3",
+  "confidence": 0.91,
+  "evidence": [
+    "Agent accessed PHI",
+    "Agent called external LLM provider",
+    "Agent does not use aegislib"
+  ]
+}
+________________
+
+
+Required Deliverables
+* GitHub repo or zip file
+* Working code (runnable without modification by the reviewer)
+* README.md with setup steps and sample commands
+* Sample input files — realistic, intentionally partial/incomplete
+* Sample output showing the full end-to-end pipeline result
+* Architecture explanation (written — must be your own words)
+* Known limitations of your implementation
+* What you would build next to move this toward production
+________________
+
+
+Accepted Tech Stack
+* Python / FastAPI or Node.js / TypeScript
+* PostgreSQL (optional), SQLite, or in-memory store
+* Docker (optional but preferred)
+________________
+
+
+What to Skip
+Do not build:
+* Full UI
+* Real eBPF capture
+* Real AWS or SaaS connectors
+* Real Semgrep integration
+* Real OPA/Rego engine
+* Real ML classifier
+* Multi-tenancy, auth, or production deployment
+If you find yourself setting up infrastructure instead of building correlation and risk logic, stop. The core domain logic is what matters.
+________________
+
+
+Evaluation Criteria
+Area
+	Weight
+	What We Look For
+	Architecture Thinking
+	30%
+	Clean event model, clear canonical schema, good separation between ingestion / normalization / correlation / risk / policy
+	Correlation Logic
+	25%
+	Handles partial keys, missing fields, time windows, duplicates, conflicting hints, multiple agents per host
+	Risk + Policy Logic
+	20%
+	Explainable findings, evidence chain, defensible scoring, not hard-coded
+	Code Quality
+	15%
+	Simple structure, clear naming, realistic sample data, basic error handling, working README
+	Product Judgment
+	10%
+	Can articulate MVP vs production, where accuracy degrades, how this maps to enterprise customer value
+	________________
+
+
+Bonus Tasks
+Extra credit for any of the following:
+* API endpoints: GET /agents and GET /agents/{id}
+* Graph output showing: Agent → Identity → Tools → Data Classes → Policy
+* Unit tests specifically for correlation edge cases
+* Confidence scoring on correlation quality — how certain is your correlator that two events belong to the same agent?

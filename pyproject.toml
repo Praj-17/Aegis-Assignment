@@ -1,0 +1,30 @@
+[project]
+name = "aegis-discovery"
+version = "0.1.0"
+description = "Aegis Discovery: normalize partial agent signals, correlate, score risk, recommend policy."
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "fastapi==0.115.12",
+    "uvicorn[standard]==0.34.0",
+    "pydantic>=2.11,<3",
+    "pyyaml==6.0.2",
+    "python-multipart==0.0.18",
+    "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

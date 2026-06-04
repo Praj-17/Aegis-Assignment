@@ -1,0 +1,22 @@
+services:
+  aegis-discovery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-discovery
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:///data/aegis.db
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/health'); sys.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,31 @@
+[
+  {
+    "type": "RuntimeEvent",
+    "event_id": "rt-001",
+    "host_id": "h-12",
+    "pid": 4471,
+    "destination": "api.anthropic.com",
+    "tools_called": ["external_llm_call"],
+    "timestamp": "2026-06-03T10:00:01Z"
+  },
+  {
+    "type": "RuntimeEvent",
+    "event_id": "rt-002",
+    "host_id": "h-12",
+    "pid": 4471,
+    "destination": "aurora.internal:5432",
+    "tools_called": ["aurora_read"],
+    "timestamp": "2026-06-03T10:00:04Z"
+  },
+  {
+    "type": "RuntimeEvent",
+    "event_id": "rt-003",
+    "host_id": "h-22",
+    "pid": 8810,
+    "destination": "api.openai.com",
+    "tools_called": ["external_llm_call"],
+    "framework_hint": "direct_sdk_or_agentic_llm",
+    "provider": "openai",
+    "timestamp": "2026-06-03T10:05:11Z"
+  }
+]

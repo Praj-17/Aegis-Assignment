@@ -1,0 +1,96 @@
+{
+  "description": "End-to-end scenario: two real agents on two hosts. claims-processor handles PHI via langchain+anthropic with no aegislib (HIGH). marketing-summary uses crewai+openai with aegislib (lower risk).",
+  "events": [
+    {
+      "type": "CapabilityHint",
+      "event_id": "cap-001",
+      "repo": "claims-processor",
+      "workload_id": "claims-processor",
+      "framework_hint": "langchain",
+      "provider": "anthropic",
+      "imports": ["langchain", "anthropic", "boto3"],
+      "declared_tools": ["external_llm_call", "aurora_read"],
+      "config_files": ["pyproject.toml"],
+      "timestamp": "2026-06-03T09:58:40Z"
+    },
+    {
+      "type": "NHIManifest",
+      "event_id": "nhi-001",
+      "nhi_id": "role-aegis-shadow-agent",
+      "workload_id": "claims-processor",
+      "host_id": "h-12",
+      "provider": "anthropic",
+      "model": "claude-3.5-sonnet",
+      "permissions": ["aurora:read", "s3:get"],
+      "timestamp": "2026-06-03T10:00:03Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-001",
+      "host_id": "h-12",
+      "pid": 4471,
+      "destination": "api.anthropic.com",
+      "tools_called": ["external_llm_call"],
+      "timestamp": "2026-06-03T10:00:01Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-002",
+      "host_id": "h-12",
+      "pid": 4471,
+      "destination": "aurora.internal:5432",
+      "tools_called": ["aurora_read"],
+      "timestamp": "2026-06-03T10:00:04Z"
+    },
+    {
+      "type": "SaaSAuditEvent",
+      "event_id": "saas-001",
+      "nhi_id": "role-aegis-shadow-agent",
+      "data_classes": ["PHI", "claims_data"],
+      "tools_called": ["aurora_read"],
+      "destination": "rds.aurora.internal",
+      "timestamp": "2026-06-03T10:00:05Z"
+    },
+    {
+      "type": "CapabilityHint",
+      "event_id": "cap-002",
+      "repo": "marketing-summary",
+      "workload_id": "marketing-summary",
+      "framework_hint": "crewai",
+      "provider": "openai",
+      "imports": ["crewai", "openai", "aegislib"],
+      "declared_tools": ["external_llm_call", "search"],
+      "timestamp": "2026-06-03T09:50:00Z"
+    },
+    {
+      "type": "NHIManifest",
+      "event_id": "nhi-002",
+      "nhi_id": "role-marketing-summarizer",
+      "workload_id": "marketing-summary",
+      "host_id": "h-22",
+      "provider": "openai",
+      "permissions": ["s3:get"],
+      "timestamp": "2026-06-03T10:05:00Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-003",
+      "host_id": "h-22",
+      "pid": 8810,
+      "destination": "api.openai.com",
+      "tools_called": ["external_llm_call"],
+      "framework_hint": "direct_sdk_or_agentic_llm",
+      "provider": "openai",
+      "timestamp": "2026-06-03T10:05:11Z"
+    },
+    {
+      "type": "SaaSAuditEvent",
+      "event_id": "saas-002",
+      "nhi_id": "role-marketing-summarizer",
+      "data_classes": ["marketing_copy"],
+      "tools_called": ["external_llm_call"],
+      "destination": "api.openai.com",
+      "timestamp": "2026-06-03T10:05:13Z"
+    }
+  ]
+}

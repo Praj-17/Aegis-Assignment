@@ -1,0 +1,53 @@
+app:
+  name: "aegis-discovery"
+  environment: "local"
+  log_level: "INFO"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+storage:
+  database_url_env: "DATABASE_URL"
+  default_sqlite_path: "data/aegis.db"
+
+correlation:
+  time_window_seconds: 300
+  duplicate_dedup: true
+  source_priority_for_framework:
+    - "CapabilityHint"
+    - "NHIManifest"
+    - "RuntimeEvent"
+    - "SaaSAuditEvent"
+
+risk:
+  weights:
+    scope: 0.20
+    sensitivity: 0.35
+    autonomy: 0.20
+    drift: 0.25
+  tiers:
+    low_max: 39
+    medium_max: 69
+  external_llm_destinations:
+    - "api.anthropic.com"
+    - "api.openai.com"
+    - "api.cohere.ai"
+    - "api.mistral.ai"
+    - "generativelanguage.googleapis.com"
+  sensitive_data_classes:
+    - "PHI"
+    - "PII"
+    - "PCI"
+    - "claims_data"
+    - "financial"
+    - "credentials"
+
+policies:
+  catalog:
+    - id: "phi-handling-v3"
+      description: "Strict PHI handling with redaction, DLP, and audit"
+    - id: "external-egress-redact"
+      description: "Redact sensitive fields before leaving the perimeter"
+    - id: "audit-all-llm-calls"
+      description: "Audit all LLM calls with sampled content capture"

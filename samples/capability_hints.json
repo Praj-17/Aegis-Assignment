@@ -1,0 +1,25 @@
+[
+  {
+    "type": "CapabilityHint",
+    "event_id": "cap-001",
+    "repo": "claims-processor",
+    "workload_id": "claims-processor",
+    "framework_hint": "langchain",
+    "provider": "anthropic",
+    "imports": ["langchain", "anthropic", "boto3"],
+    "declared_tools": ["external_llm_call", "aurora_read"],
+    "config_files": ["pyproject.toml", "requirements.txt"],
+    "timestamp": "2026-06-03T09:58:40Z"
+  },
+  {
+    "type": "CapabilityHint",
+    "event_id": "cap-002",
+    "repo": "marketing-summary",
+    "workload_id": "marketing-summary",
+    "framework_hint": "crewai",
+    "provider": "openai",
+    "imports": ["crewai", "openai", "aegislib"],
+    "declared_tools": ["external_llm_call", "search"],
+    "timestamp": "2026-06-03T09:50:00Z"
+  }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "type": "NHIManifest",
+    "event_id": "nhi-001",
+    "nhi_id": "role-aegis-shadow-agent",
+    "workload_id": "claims-processor",
+    "host_id": "h-12",
+    "provider": "anthropic",
+    "model": "claude-3.5-sonnet",
+    "permissions": ["aurora:read", "s3:get", "secretsmanager:get"],
+    "timestamp": "2026-06-03T10:00:03Z"
+  },
+  {
+    "type": "NHIManifest",
+    "event_id": "nhi-002",
+    "nhi_id": "role-marketing-summarizer",
+    "workload_id": "marketing-summary",
+    "host_id": "h-22",
+    "provider": "openai",
+    "permissions": ["s3:get"],
+    "timestamp": "2026-06-03T10:05:00Z"
+  }
+]

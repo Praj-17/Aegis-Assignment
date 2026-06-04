@@ -1,0 +1,69 @@
+{
+  "description": "Edge cases exercised by the correlator: duplicates, out-of-order, conflicting framework_hint, multiple agents per host, partial keys.",
+  "events": [
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-dup-1",
+      "host_id": "h-99",
+      "pid": 1111,
+      "destination": "api.openai.com",
+      "tools_called": ["external_llm_call"],
+      "timestamp": "2026-06-03T11:00:00Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-dup-2",
+      "host_id": "h-99",
+      "pid": 1111,
+      "destination": "api.openai.com",
+      "tools_called": ["external_llm_call"],
+      "timestamp": "2026-06-03T11:00:00Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-host-other-pid",
+      "host_id": "h-99",
+      "pid": 2222,
+      "destination": "api.anthropic.com",
+      "tools_called": ["external_llm_call"],
+      "timestamp": "2026-06-03T11:00:30Z"
+    },
+    {
+      "type": "CapabilityHint",
+      "event_id": "cap-conflict-A",
+      "repo": "conflicted-agent",
+      "workload_id": "conflicted-agent",
+      "framework_hint": "langchain",
+      "imports": ["langchain"],
+      "timestamp": "2026-06-03T10:55:00Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-conflict-B",
+      "host_id": "h-77",
+      "pid": 555,
+      "workload_id": "conflicted-agent",
+      "framework_hint": "crewai",
+      "destination": "api.openai.com",
+      "tools_called": ["external_llm_call"],
+      "timestamp": "2026-06-03T10:58:00Z"
+    },
+    {
+      "type": "SaaSAuditEvent",
+      "event_id": "saas-out-of-order",
+      "workload_id": "conflicted-agent",
+      "data_classes": ["PII"],
+      "tools_called": ["external_llm_call"],
+      "destination": "api.openai.com",
+      "timestamp": "2026-06-03T10:54:30Z"
+    },
+    {
+      "type": "RuntimeEvent",
+      "event_id": "rt-no-keys-but-time",
+      "host_id": "h-77",
+      "destination": "api.openai.com",
+      "tools_called": ["external_llm_call"],
+      "timestamp": "2026-06-03T10:59:00Z"
+    }
+  ]
+}
