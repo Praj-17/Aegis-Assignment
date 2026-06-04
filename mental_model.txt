@@ -1,0 +1,31 @@
+raw events (JSON)
+      |
+      v
+[Normalizer]      -> every source converted to a CanonicalEvent; dedup via sha256
+      |
+      v
+[Storage]         -> SQLite (JSON blobs); dedup index on (source, fingerprint)
+      |
+      v
+[Correlator]      -> Union-Find clustering on join keys -> clusters of events
+      |
+      v
+[Agent Builder]   -> collapse cluster into one Agent (first-non-null wins for scalars,
+      |                                                union for lists)
+      v
+[Fingerprint Classifier] -> assign a framework (langchain / crewai / mcp / direct_sdk / ...)
+      |                     and resolve any conflicts by source priority
+      v
+[Risk Rules]      -> R1 PHI->External LLM, R2 Agent w/o aegislib, R3 Unexpected Tools
+      |                     -> each emits a Finding with severity + evidence
+      v
+[Risk Scorer]     -> composite 0-100 from 4 factors (Scope, Sensitivity, Autonomy, Drift)
+      |                     -> tier: LOW (0-39) / MEDIUM (40-69) / HIGH (70-100)
+      v
+[Policy Recommender] -> 1 of {phi-handling-v3, external-egress-redact, audit-all-llm-calls}
+      |                     + evidence list + confidence
+      v
+[Persistence] -> agents table replaced atomically
+      |
+      v
+[API / UI] -> FastAPI + a single vanilla HTML/JS/SVG page
