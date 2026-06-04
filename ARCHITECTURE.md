@@ -51,6 +51,8 @@ Why one canonical event type instead of four downstream paths? Because every dow
 
 Per-source mappers move fields into the canonical shape, fill defaults (UTC timestamps), and compute a stable content fingerprint (`sha256` of the sorted-key JSON) used for deduplication. Capability hints with no explicit framework get one derived from imports (e.g. `langchain` import -> `langchain`) or config files (`mcp.json` or `.cursor/` -> `mcp`).
 
+> **Assumption (spec is silent):** missing `timestamp` defaults to "now (UTC)" and naive timestamps are treated as UTC. Missing `event_id` is auto-generated (`rt-<hex>`, `nhi-<hex>`, `cap-<hex>`, `saas-<hex>`). Duplicates are detected by `sha256` of the sorted-key JSON of the raw event, scoped per source.
+
 ## 5. Identity Correlator — the core
 
 [src/aegis_discovery/correlation/correlator.py](src/aegis_discovery/correlation/correlator.py)
@@ -59,6 +61,8 @@ Uses **Union-Find (Disjoint Set Union)** over event indices. We build an index f
 
 - **Strong keys (merge unconditionally):** `nhi_id`, `(host_id, pid)`, `workload_id`, and `repo`. Each of these is a globally unique identifier in its own namespace, so two events sharing one almost certainly belong to the same agent.
 - **Weak key (merge inside the time window):** `host_id` alone. Two events on the same host with no other shared key only merge if they are within ±5 minutes (configurable in `config.yml`) and don't disagree on pid. Without that guard, two unrelated agents on the same host would collapse into one.
+
+> **Assumption (spec is silent):** the assignment lists the four join keys (`nhi_id`, `host_id+pid`, `workload_id`, time window) without saying how time window interacts with the other three. We treat time window as a **gating condition for weak matches only**, not a standalone join key. Two events with no shared identity but the same timestamp must not merge — that would collapse every concurrent agent in the system. We also promoted `repo` to a strong key (alongside `workload_id`) because a repo scan + a workload manifest sharing the repo name are clearly the same deployment.
 
 This design directly addresses the edge cases the assignment calls out:
 
@@ -83,11 +87,15 @@ Each cluster gets a `correlation_confidence` in [0, 1] based on:
 
 A single-event "cluster" gets 0.4 — we have only one signal so we're modestly confident at best. A framework conflict trims 0.1 off the final score, because conflicts are a sign we merged two things that disagree on something fundamental.
 
+> **Assumption (spec is silent):** the bonus says "confidence scoring on correlation quality" without defining a formula. The numeric weights above are our judgment call — `nhi_id` is the strongest single key (deliberately the largest contributor), time window is a soft reinforcer (smallest contributor). They sum to a max of 1.0 by design, not by accident.
+
 ## 6. Agent builder
 
 [src/aegis_discovery/correlation/agent_builder.py](src/aegis_discovery/correlation/agent_builder.py)
 
 Collapses a cluster's events into a single Agent: first-non-null wins for identity scalars, list-valued fields (`tools`, `data_classes`, `imports`, `destinations`) are union'd in first-seen order. `agent_id` is derived deterministically from the strongest identity available (`agent-nhi-<slug>` > `agent-wl-<slug>` > `agent-hp-<host-pid>` > `agent-repo-<slug>`) so re-running the pipeline doesn't churn IDs.
+
+> **Assumption (spec is silent):** the assignment example shows `agent_001`-style IDs. We chose deterministic, identity-derived IDs instead so the same agent gets the same ID across re-runs without needing a stateful counter. "First-non-null wins" for scalars assumes that all events in the cluster genuinely describe the same agent (which the correlator has already vouched for via the join keys).
 
 ## 7. Fingerprint classifier
 
@@ -101,6 +109,8 @@ Deterministic rules:
 ### Conflict resolution
 
 The assignment doesn't prescribe how to resolve disagreement on `framework_hint`. We use **source priority weighted by trust**: `CapabilityHint` > `NHIManifest` > `RuntimeEvent` > `SaaSAuditEvent`. A repo scan sees actual `import` statements; runtime is more of an inference. The winning source's value is chosen, the disagreement is recorded as a `FrameworkConflict` on the agent (visible in the API and the UI), and `correlation_confidence` is reduced by 0.1.
+
+> **Assumption (spec is silent):** the assignment requires the correlator to *handle* `framework_hint` conflicts but doesn't say how. We chose source-priority over the alternatives (most-recent-wins, majority-vote, keep-both-with-confidence) because it's deterministic and defensible: a `langchain` import in a repo is ground truth, while a runtime-inferred hint is a guess. The full priority list is in `config.yml` so it can be tuned without code changes.
 
 ### Path to a learned classifier
 
@@ -122,6 +132,11 @@ The three required rules, plus a couple of nearby ones:
 
 Every finding carries its own evidence list. The same evidence lines feed both the UI and the policy recommender.
 
+> **Assumption (spec is silent):**
+> - **R1**: assignment only says "external LLM provider". We treat the catalog in `config.yml` (`api.anthropic.com`, `api.openai.com`, etc.) as the definition of "external", and added the softer MEDIUM variant for non-PHI sensitive classes so PCI/credentials don't go unnoticed.
+> - **R2**: assignment says MEDIUM-or-HIGH without picking. We escalate to HIGH when sensitive data is also present (the risk is concrete, not theoretical), and MEDIUM otherwise.
+> - **R3**: assignment says "baseline set" but never defines it. We ship a per-framework baseline (langchain → search/calculator/python_repl/etc.; crewai → task_delegate/etc.) plus the agent's own declared `imports` as an allow-list. Tools containing `aurora`/`s3`/`secrets`/`kms`/`shell`/`exec` escalate to HIGH because they look like data/credential reach.
+
 ## 9. Risk scorer
 
 [src/aegis_discovery/risk/scorer.py](src/aegis_discovery/risk/scorer.py)
@@ -139,6 +154,8 @@ Default weights live in [config.yml](config.yml) (`sensitivity 0.35`, `drift 0.2
 
 Every factor is exposed on the Agent (`risk_factors`), so reviewers can see exactly why a number came out the way it did.
 
+> **Assumption (spec is silent):** the four factors are required, but the weights are ours. Sensitivity is weighted highest because "what data did you touch" is the most consequential variable in a privacy-and-compliance context; drift is second because deviating from baseline tools is the strongest behavioral red flag. Scope and autonomy are weighted lower because they tend to be correlated with sensitivity and drift respectively (avoiding double-counting). The exact per-factor formulas (e.g. "each tool worth 12 points, capped at 60", "PHI/PCI/credentials map to 100") are also our judgment calls and live in [scorer.py](src/aegis_discovery/risk/scorer.py) for transparent review. The HIGH-finding floor clamp is a guardrail we added so a deterministic HIGH rule can't be silently overridden by a low composite.
+
 ## 10. Policy recommender
 
 [src/aegis_discovery/policy/recommender.py](src/aegis_discovery/policy/recommender.py)
@@ -151,6 +168,8 @@ Decision order:
 "Confirmed external" means a destination matches a known external LLM host or the agent uses the `external_llm_call` tool. A bare `provider=anthropic` is not enough — that just says "we use an Anthropic SDK", which is the catch-all `audit-all-llm-calls` case.
 
 Every recommendation returns an `evidence` list. Recommendation confidence is `correlation_confidence + 0.2`, with a slight bonus for the PHI tier and a slight penalty for the audit tier (we're less sure when we only have a provider name).
+
+> **Assumption (spec is silent):** the assignment gives the three example policies and an example decision tree, but doesn't tightly define "external LLM" or how confidence is computed. We separated **observed egress** (destination/tool evidence) from **inferred LLM use** (provider/model name): the first picks a restrictive policy, the second falls back to audit. The confidence formula `correlation_confidence + 0.2` is our judgment — a recommendation can never be more certain than the correlation it's based on, but a clean rule firing is worth a small bonus.
 
 ## 11. Graph builder (bonus)
 
@@ -185,7 +204,73 @@ GET    /                             single-page UI
 
 [web/index.html](web/index.html). Vanilla HTML / JS / SVG, no build step. Paste or upload events, hit "Run pipeline", and the page renders agent cards with the score, tier pill, framework, identity, tool / data / destination chips, finding evidence, recommended policy + evidence, the risk-factor bars, the graph, and the raw agent JSON. Conflicts are surfaced inline.
 
-## 15. Known limitations
+## 15. Inline assumptions (full list)
+
+The assignment leaves a number of decisions intentionally open ("You define the schema", "MEDIUM or HIGH", "example logic", etc.). This section catalogs every one of those judgment calls in one place. Each is also called out inline in the relevant section above as a `> Assumption:` callout.
+
+### Correlation
+
+1. **Time window is a gate, not a standalone key.** The assignment lists time window as the 4th join key. We treat it as a gating condition for *weak* matches only (host_id alone). Otherwise every concurrent agent in the system would merge.
+2. **`repo` is promoted to a strong key.** Implicit: a repo scan and a workload manifest sharing the repo name describe the same deployment.
+3. **`(host_id, pid)` requires both halves.** Same host with different pids stays in separate clusters.
+4. **Host-only merging respects pid disagreement.** Two events on the same host within the window won't merge if their pids are present and different.
+5. **Out-of-order is fixed by pre-sort.** Events are sorted by timestamp before clustering, so arrival order doesn't change the output.
+6. **Duplicate = (source, sha256-of-sorted-key-JSON).** Two events from the same source with byte-equivalent payloads are deduped before clustering.
+7. **Correlation confidence formula.** Numeric weights (+0.30 for `nhi_id`, +0.20 for `host+pid`, +0.15 for `workload_id`, +0.10 for `repo`, +0.10 for time window) are our judgment, designed to sum to a max of 1.0 and to penalize single-event clusters (0.4).
+
+### Identity merging / agent record
+
+8. **Stable, identity-derived `agent_id`.** `agent-nhi-<slug>` > `agent-wl-<slug>` > `agent-hp-<host-pid>` > `agent-repo-<slug>`. Chosen over the assignment's `agent_001`-style counter so re-runs don't churn IDs.
+9. **First-non-null wins** for identity scalars (`nhi_id`, `workload_id`, `host_id`, etc.) when collapsing a cluster.
+10. **List fields are union'd, not deduplicated across events.** Order-preserving first-seen union for `tools`, `data_classes`, `imports`, `destinations`.
+
+### Normalization
+
+11. **Missing `timestamp` defaults to "now (UTC)".** Naive datetimes are interpreted as UTC.
+12. **Missing `event_id` is auto-generated** (`rt-<hex>`, `nhi-<hex>`, `cap-<hex>`, `saas-<hex>`).
+13. **Framework can be derived from imports** when a `CapabilityHint` has no explicit `framework_hint` (e.g. `langchain` import -> `langchain`).
+14. **MCP markers.** `.cursor/`, `.cursor/mcp.json`, `mcp.json`, `.mcp/` in `config_files` all mark an agent as MCP-enabled.
+
+### Fingerprint classifier
+
+15. **Source-priority resolution for conflicting `framework_hint`.** `CapabilityHint` > `NHIManifest` > `RuntimeEvent` > `SaaSAuditEvent`. Chosen over most-recent-wins or majority-vote because a repo scan reads actual `import` statements.
+16. **Conflict penalty.** A framework conflict reduces `correlation_confidence` by 0.1 because the merged events disagree on something fundamental.
+17. **Extended framework catalog.** Beyond the 4 examples in the assignment (`langchain`, `crewai`, `direct_sdk_or_agentic_llm`, `mcp`), we also classify `llama_index`, `autogen`, `semantic_kernel`, and we expand the SDK-direct list (`anthropic`, `openai`, `cohere`, `mistralai`, `google.generativeai`).
+
+### Risk rules
+
+18. **"External LLM" is a configured catalog**, not a free-form check. `api.anthropic.com`, `api.openai.com`, `api.cohere.ai`, `api.mistral.ai`, `generativelanguage.googleapis.com`. Sits in `config.yml` for tuning.
+19. **R1 has a softer MEDIUM variant** for non-PHI sensitive data classes (PCI, credentials, etc.) reaching an external LLM, because the spec only required PHI but the same risk shape applies.
+20. **R2 severity = HIGH when data is touched, MEDIUM otherwise.** The assignment says "MEDIUM or HIGH" without choosing.
+21. **R2 has a "no repo visibility" sub-rule** that fires MEDIUM when a framework is classified but no `CapabilityHint` was correlated — we can't *verify* aegislib usage so we flag the gap.
+22. **R3 baseline is per-framework + declared imports.** We ship a small hard-coded baseline per framework (`langchain` -> search/calculator/python_repl/wikipedia/external_llm_call; `crewai` -> task_delegate/summarize/etc.) and allow anything the agent itself declared as an import.
+23. **R3 escalates to HIGH for "reach" tools.** Any unexpected tool containing `aurora`/`s3`/`secrets`/`kms`/`shell`/`exec`/`filesystem`/`rds` flips MEDIUM -> HIGH because those touch data or credentials.
+
+### Risk scoring
+
+24. **Weights:** sensitivity 0.35, drift 0.25, scope 0.20, autonomy 0.20. Sensitivity is heaviest because data exposure is the most consequential variable.
+25. **Per-factor scoring formulas** (Scope = 12pts/tool capped at 60 + 15pts/destination capped at 40; Sensitivity = 100 for PHI/PCI/credentials, 70 for other sensitive, 30 for any data class, 0 for none; Autonomy = 60 for external destination + 25 for `external_llm_call` tool + 25 for agentic framework; Drift = 25pts per tool outside baseline + 20pt penalty for missing aegislib). All in [scorer.py](src/aegis_discovery/risk/scorer.py).
+26. **HIGH-finding floor clamp.** A HIGH severity finding pulls the composite up to at least 72 (= 85 * 0.85), so a deterministic HIGH rule can't be silently overridden by a low composite.
+27. **Tier boundaries are configurable** even though the assignment specifies them, so operators can re-tune without code changes.
+
+### Policy recommender
+
+28. **"External LLM only" requires *observed egress*.** A bare `provider=anthropic` does not qualify — that goes to `audit-all-llm-calls`. Observed egress = destination matches the external catalog OR the agent uses the `external_llm_call` tool.
+29. **Policy confidence = `correlation_confidence + 0.2`**, with +0.1 for the PHI-handling tier and -0.1 for the audit tier. Recommendations are never more confident than the underlying correlation.
+30. **PHI-handling evidence chain** includes the aegislib finding when present, even though the policy decision doesn't depend on it — operators consistently want to see "and they're not using aegislib" alongside "and PHI left the perimeter".
+
+### Sensitive data classes catalog
+
+31. **Sensitive classes catalog.** `PHI`, `PII`, `PCI`, `claims_data`, `financial`, `credentials`. Lives in `config.yml`. Drives both R1's MEDIUM variant and the Sensitivity factor.
+
+### Storage and API
+
+32. **JSON-blob persistence.** Both `events` and `agents` are stored as serialized Pydantic models keyed by id, with one index on `(source, fingerprint_hash)`. Chosen because the schema changes more often than the access patterns at this stage.
+33. **`POST /events` runs the pipeline synchronously.** No queue, no batch — the caller's request returns only after correlation + scoring + policy is done. Fine for interactive use, intentionally not production-shaped.
+34. **`replace_all_agents` on every run.** Every pipeline run re-derives all agents from all stored events, then atomically swaps the agent table. Avoids stale records but means agent history is not preserved across runs.
+35. **CORS is wide-open.** `allow_origins=["*"]` so the local single-page UI works from `file://` or any port during development.
+
+## 16. Known limitations
 
 - **No baseline learning.** Drift detection uses a hard-coded baseline per framework. In production, baseline tool sets should be learned per agent over a quiet window.
 - **In-process scheduler.** The pipeline runs synchronously inside the request. With thousands of events per second this becomes a problem — a real deployment would buffer ingest into a queue and run the correlator in batches.
@@ -196,7 +281,7 @@ GET    /                             single-page UI
 - **Policy catalog is static.** Real policy selection should be data-driven (per environment, per data domain).
 - **No auth / authz.** Out of scope for the MVP.
 
-## 16. What I'd build next for production
+## 17. What I'd build next for production
 
 1. **Event bus + batch correlator.** Kafka -> stream processor that maintains running clusters per join key, with TTL eviction.
 2. **Learned framework classifier.** Use current rules as weak labels; ship a small XGBoost model behind a feature flag and shadow-evaluate.
